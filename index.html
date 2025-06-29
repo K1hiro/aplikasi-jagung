@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Klasifikasi Penyakit Daun Jagung</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+      }
+      .uploaded-image-preview,
+      .camera-capture-preview {
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin-bottom: 1.5rem;
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      video {
+        width: 100%;
+        max-width: 100%; /* Ensure video scales on smaller screens */
+        height: auto;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        background-color: #000; /* Background for video element */
+      }
+      canvas {
+        display: none; /* Hidden by default, used for capturing photo */
+      }
+    </style>
+  </head>
+  <body class="bg-gradient-to-br from-green-300 to-lime-500 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md text-center">
+      <h1 class="text-4xl font-bold text-lime-700 mb-6 flex items-center justify-center"><span class="mr-3">🌽</span> Klasifikasi Penyakit Daun Jagung</h1>
+      <p class="text-gray-700 mb-8 leading-relaxed">
+        Aplikasi ini dapat memprediksi 4 kondisi pada daun jagung: <strong class="text-green-600">Bercak Daun (Gray Leaf Spot)</strong>, <strong class="text-green-600">Hawar Daun (Northern Leaf Blight)</strong>,
+        <strong class="text-green-600">Karat Daun (Rust)</strong>, atau <strong class="text-green-600">Sehat (Healthy)</strong>. Silakan unggah gambar dari galeri atau potret langsung dari kamera.
+      </p>
+
+      <form id="uploadForm" action="/predict" method="post" enctype="multipart/form-data" class="space-y-6">
+        <div class="text-left mb-4">
+          <label for="imageUpload" class="block text-gray-800 font-semibold mb-2"> 1. Unggah Gambar dari Galeri: </label>
+          <input
+            type="file"
+            id="imageUpload"
+            name="image"
+            accept="image/*"
+            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-lime-50 file:text-lime-700 hover:file:bg-lime-100 cursor-pointer"
+          />
+
+          <div id="imagePreviewContainer" class="mt-4 hidden">
+            <img id="imagePreview" class="uploaded-image-preview" />
+          </div>
+        </div>
+
+        <div class="text-left mb-6">
+          <label class="block text-gray-800 font-semibold mb-2"> 2. Atau, Potret Langsung dengan Kamera: </label>
+          <video id="cameraFeed" autoplay class="mt-2"></video>
+          <button type="button" id="takePhotoButton" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold text-lg hover:bg-blue-700 transition duration-300 ease-in-out shadow-lg transform hover:scale-105 mt-4">Ambil Foto</button>
+          <canvas id="canvas" class="camera-capture-preview"></canvas>
+          <img id="capturedImagePreview" class="camera-capture-preview hidden mt-4" />
+        </div>
+
+        <button type="submit" id="submitButton" class="w-full bg-lime-600 text-white py-3 rounded-lg font-bold text-lg hover:bg-lime-700 transition duration-300 ease-in-out shadow-lg transform hover:scale-105">
+          Klasifikasikan Gambar Ini
+        </button>
+      </form>
+
+      <footer class="mt-10 text-gray-500 text-sm">Dibuat dengan Flask dan TensorFlow/Keras.</footer>
+    </div>
+
+    <script>
+      const uploadForm = document.getElementById("uploadForm");
+      const imageUpload = document.getElementById("imageUpload");
+      const imagePreviewContainer = document.getElementById("imagePreviewContainer");
+      const imagePreview = document.getElementById("imagePreview");
+      const cameraFeed = document.getElementById("cameraFeed");
+      const takePhotoButton = document.getElementById("takePhotoButton");
+      const canvas = document.getElementById("canvas");
+      const capturedImagePreview = document.getElementById("capturedImagePreview");
+      const submitButton = document.getElementById("submitButton");
+
+      let currentStream; // Untuk menyimpan stream kamera
+      let capturedBlob = null; // Untuk menyimpan blob gambar yang ditangkap
+
+      // Fungsi untuk menghentikan stream kamera
+      function stopCamera() {
+        if (currentStream) {
+          currentStream.getTracks().forEach((track) => track.stop());
+          cameraFeed.srcObject = null;
+          currentStream = null;
+        }
+      }
+
+      // Fungsi untuk memulai kamera
+      async function startCamera() {
+        stopCamera(); // Hentikan kamera jika sudah berjalan
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }); // Coba kamera belakang
+          cameraFeed.srcObject = stream;
+          currentStream = stream;
+          cameraFeed.style.display = "block"; // Tampilkan video feed
+          takePhotoButton.style.display = "block"; // Tampilkan tombol ambil foto
+          console.log("Kamera berhasil diakses.");
+        } catch (err) {
+          console.error("Gagal mengakses kamera: ", err);
+          // Jika kamera belakang gagal, coba kamera depan sebagai fallback
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            cameraFeed.srcObject = stream;
+            currentStream = stream;
+            cameraFeed.style.display = "block";
+            takePhotoButton.style.display = "block";
+            console.log("Kamera depan berhasil diakses sebagai fallback.");
+          } catch (fallbackErr) {
+            console.error("Gagal mengakses kamera sama sekali: ", fallbackErr);
+            alert("Akses kamera ditolak atau tidak tersedia.");
+            cameraFeed.style.display = "none"; // Sembunyikan video feed
+            takePhotoButton.style.display = "none"; // Sembunyikan tombol ambil foto
+          }
+        }
+      }
+
+      // Event listener untuk input file
+      imageUpload.addEventListener("change", function () {
+        stopCamera(); // Hentikan kamera jika user memilih file
+        const file = this.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            imagePreview.src = e.target.result;
+            imagePreviewContainer.classList.remove("hidden");
+          };
+          reader.readAsDataURL(file);
+          // Sembunyikan hasil kamera jika ada
+          capturedImagePreview.classList.add("hidden");
+          capturedImagePreview.src = "";
+          capturedBlob = null;
+        } else {
+          imagePreviewContainer.classList.add("hidden");
+          imagePreview.src = "";
+          // Jika input file kosong, coba mulai kamera lagi
+          startCamera();
+        }
+      });
+
+      // Event listener untuk tombol "Ambil Foto"
+      takePhotoButton.addEventListener("click", function () {
+        if (currentStream) {
+          // Pastikan canvas memiliki ukuran yang sama dengan video
+          canvas.width = cameraFeed.videoWidth;
+          canvas.height = cameraFeed.videoHeight;
+          canvas.getContext("2d").drawImage(cameraFeed, 0, 0, canvas.width, canvas.height);
+
+          // Konversi canvas ke Blob (format JPEG)
+          canvas.toBlob(
+            function (blob) {
+              capturedBlob = blob;
+              capturedImagePreview.src = URL.createObjectURL(blob);
+              capturedImagePreview.classList.remove("hidden");
+              console.log("Foto berhasil diambil.");
+              stopCamera(); // Hentikan kamera setelah foto diambil
+              imagePreviewContainer.classList.add("hidden"); // Sembunyikan preview unggahan
+              imageUpload.value = ""; // Kosongkan input file
+            },
+            "image/jpeg",
+            0.9
+          ); // Kualitas JPEG 90%
+        } else {
+          alert("Kamera belum siap atau tidak bisa diakses.");
+        }
+      });
+
+      // Event listener untuk submit form
+      uploadForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+
+        const formData = new FormData();
+        let fileToUpload = null;
+
+        if (imageUpload.files.length > 0) {
+          // Jika ada file diunggah
+          fileToUpload = imageUpload.files[0];
+          console.log("Mengunggah file dari galeri.");
+        } else if (capturedBlob) {
+          // Jika ada foto yang diambil dari kamera
+          fileToUpload = new File([capturedBlob], "camera_photo.jpeg", { type: "image/jpeg" });
+          console.log("Mengunggah foto dari kamera.");
+        } else {
+          alert("Harap unggah gambar atau ambil foto dari kamera.");
+          return;
+        }
+
+        if (fileToUpload) {
+          formData.append("image", fileToUpload);
+
+          try {
+            // Sementara tampilkan indikator loading jika Anda ingin seperti di versi AJAX
+            // Jika Anda ingin redirect seperti sebelumnya, tidak perlu bagian ini
+            // Atau bisa tampilkan loading sederhana di HTML/CSS
+            // console.log("Mengirimkan data ke server...");
+            uploadForm.submit(); // Submit form secara tradisional
+          } catch (error) {
+            console.error("Error saat submit form:", error);
+            alert("Terjadi kesalahan saat mengirim gambar.");
+          }
+        }
+      });
+
+      // Panggil startCamera saat halaman dimuat
+      window.addEventListener("load", startCamera);
+      // Panggil stopCamera saat user meninggalkan halaman
+      window.addEventListener("beforeunload", stopCamera);
+    </script>
+  </body>
+</html>
